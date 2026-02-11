@@ -66,10 +66,14 @@ export default function Index() {
   }, []);
 
   async function fetchPokemonData() {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
     try {
       setError(null);
       const response = await fetch(
         "https://pokeapi.co/api/v2/pokemon?limit=52",
+        { signal: controller.signal },
       );
 
       if (!response.ok) {
@@ -81,8 +85,10 @@ export default function Index() {
       const detailedPokemonData = await Promise.all(
         data.results.map(async (pokemon: any) => {
           try {
-            const response = await fetch(pokemon.url);
-            const details = await response.json();
+            const detailResponse = await fetch(pokemon.url, {
+              signal: controller.signal,
+            });
+            const details = await detailResponse.json();
             return {
               name: pokemon.name,
               url: pokemon.url,
@@ -99,16 +105,20 @@ export default function Index() {
         }),
       );
 
-      // Filter out any failed detailed fetches
       setPokemonData(
         detailedPokemonData.filter((p) => p !== null) as Pokemon[],
       );
     } catch (error: any) {
       console.error("Fetch error:", error);
-      setError(
-        error.message || "Something went wrong while fetching Pokémon data.",
-      );
+      if (error.name === "AbortError") {
+        setError("Request timed out. The network might be slow.");
+      } else {
+        setError(
+          error.message || "Something went wrong while fetching Pokémon data.",
+        );
+      }
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   }
