@@ -3,15 +3,13 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
     ActivityIndicator,
-    Dimensions,
     ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
+    useWindowDimensions,
 } from "react-native";
-
-const { width } = Dimensions.get("window");
 
 type PokemonDetails = {
   id: number;
@@ -67,7 +65,9 @@ export default function Details() {
   const [species, setSpecies] = useState<Species | null>(null);
   const [varieties, setVarieties] = useState<Variety[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("Forms");
+  const { width } = useWindowDimensions();
 
   useEffect(() => {
     if (name) {
@@ -78,11 +78,13 @@ export default function Details() {
   async function fetchAllData(pokemonName: string) {
     try {
       setLoading(true);
+      setError(null);
 
       // 1. Fetch Basic Pokemon Details
       const pokemonRes = await fetch(
         `https://pokeapi.co/api/v2/pokemon/${pokemonName}`,
       );
+      if (!pokemonRes.ok) throw new Error("Pokemon not found");
       const pokemonData: PokemonDetails = await pokemonRes.json();
       setPokemon(pokemonData);
 
@@ -90,28 +92,35 @@ export default function Details() {
       const speciesRes = await fetch(
         `https://pokeapi.co/api/v2/pokemon-species/${pokemonData.id}`,
       );
+      if (!speciesRes.ok) throw new Error("Species details not found");
       const speciesData: Species = await speciesRes.json();
       setSpecies(speciesData);
 
       // 3. Fetch Varieties (Forms) Data to get images
       if (speciesData.varieties?.length > 0) {
         const varietyPromises = speciesData.varieties.map(async (v) => {
-          const res = await fetch(v.pokemon.url);
-          const data = await res.json();
-          return {
-            name: v.pokemon.name,
-            image:
-              data.sprites.other["official-artwork"].front_default ||
-              data.sprites.front_default,
-            is_default: v.is_default,
-          };
+          try {
+            const res = await fetch(v.pokemon.url);
+            if (!res.ok) return null;
+            const data = await res.json();
+            return {
+              name: v.pokemon.name,
+              image:
+                data.sprites.other["official-artwork"].front_default ||
+                data.sprites.front_default,
+              is_default: v.is_default,
+            };
+          } catch (e) {
+            return null;
+          }
         });
 
         const varietiesData = await Promise.all(varietyPromises);
-        setVarieties(varietiesData);
+        setVarieties(varietiesData.filter((v) => v !== null) as Variety[]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching data:", error);
+      setError(error.message || "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -129,10 +138,24 @@ export default function Details() {
 
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-  if (loading || !pokemon) {
+  if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#0000ff" />
+      </View>
+    );
+  }
+
+  if (error || !pokemon) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.errorText}>{error || "Pokemon not found"}</Text>
+        <TouchableOpacity
+          style={styles.retryBtn}
+          onPress={() => name && fetchAllData(name as string)}
+        >
+          <Text style={styles.retryText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -360,5 +383,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#7E8495",
     lineHeight: 22,
+  },
+  errorText: {
+    color: "#FF3B30",
+    fontSize: 16,
+    textAlign: "center",
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  retryBtn: {
+    backgroundColor: "#2E3A59",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: "#FFF",
+    fontWeight: "600",
   },
 });

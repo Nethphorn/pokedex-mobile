@@ -4,19 +4,17 @@ import { Link, Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Dimensions,
   FlatList,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const { width } = Dimensions.get("window");
 const COLUMN_count = 2;
-const CARD_WIDTH = (width - 48) / COLUMN_count; // 48 = padding (16*3) for gap
 
 interface Pokemon {
   name: string;
@@ -53,9 +51,14 @@ const typeColors: Record<string, string> = {
 };
 
 export default function Index() {
+  const { width } = useWindowDimensions();
+  const actualWidth = Math.min(width, 500); // Respect the 500px max width from layout
+  const cardWidth = (actualWidth - 48) / COLUMN_count;
+
   const [pokemonData, setPokemonData] = useState<Pokemon[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -64,30 +67,47 @@ export default function Index() {
 
   async function fetchPokemonData() {
     try {
+      setError(null);
       const response = await fetch(
         "https://pokeapi.co/api/v2/pokemon?limit=52",
       );
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch: ${response.status}`);
+      }
+
       const data = await response.json();
 
       const detailedPokemonData = await Promise.all(
         data.results.map(async (pokemon: any) => {
-          const response = await fetch(pokemon.url);
-          const details = await response.json();
-          return {
-            name: pokemon.name,
-            url: pokemon.url,
-            image:
-              details.sprites.other["official-artwork"].front_default ||
-              details.sprites.front_default,
-            id: details.id,
-            types: details.types,
-          };
+          try {
+            const response = await fetch(pokemon.url);
+            const details = await response.json();
+            return {
+              name: pokemon.name,
+              url: pokemon.url,
+              image:
+                details.sprites.other["official-artwork"].front_default ||
+                details.sprites.front_default,
+              id: details.id,
+              types: details.types,
+            };
+          } catch (e) {
+            console.error(`Error fetching details for ${pokemon.name}:`, e);
+            return null;
+          }
         }),
       );
 
-      setPokemonData(detailedPokemonData);
-    } catch (error) {
-      console.error(error);
+      // Filter out any failed detailed fetches
+      setPokemonData(
+        detailedPokemonData.filter((p) => p !== null) as Pokemon[],
+      );
+    } catch (error: any) {
+      console.error("Fetch error:", error);
+      setError(
+        error.message || "Something went wrong while fetching Pokémon data.",
+      );
     } finally {
       setLoading(false);
     }
@@ -109,7 +129,10 @@ export default function Index() {
         asChild
       >
         <TouchableOpacity
-          style={StyleSheet.flatten([styles.card, { backgroundColor }])}
+          style={StyleSheet.flatten([
+            styles.card,
+            { backgroundColor, width: cardWidth, height: cardWidth * 1.3 },
+          ])}
         >
           <View style={styles.imageContainer}>
             <Image
@@ -169,6 +192,13 @@ export default function Index() {
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#2E3A59" />
+        </View>
+      ) : error ? (
+        <View style={styles.center}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={fetchPokemonData}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -245,8 +275,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   card: {
-    width: CARD_WIDTH,
-    height: CARD_WIDTH * 1.3, // Aspect ratio
     borderRadius: 16,
     padding: 12,
     alignItems: "center",
@@ -278,6 +306,23 @@ const styles = StyleSheet.create({
   id: {
     fontSize: 14,
     color: "#7E8495",
+    fontWeight: "600",
+  },
+  errorText: {
+    color: "#FF3B30",
+    fontSize: 16,
+    textAlign: "center",
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  retryBtn: {
+    backgroundColor: "#2E3A59",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: "#FFF",
     fontWeight: "600",
   },
 });
