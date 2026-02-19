@@ -23,7 +23,6 @@
     },
     "web": {
       "output": "static",
-      "baseUrl": "/pokedex-mobile",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
